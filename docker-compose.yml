@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # 1. Banco de Dados Postgres com suporte nativo a pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: bffd-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-bffd}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./09-codigo/db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Servidor MCP de Regras de Domínio
+  mcp-server:
+    build:
+      context: ./09-codigo/mcp-server
+      dockerfile: Dockerfile
+    container_name: bffd-mcp-server
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_2026}@postgres:5432/${POSTGRES_DB:-bffd}
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-bffd-secure-pilot-session-token-secret-2026}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+
+  # 3. Runtime de IA (Hermes AIAgent como biblioteca)
+  agent-runtime:
+    build:
+      context: ./09-codigo/agent-runtime
+      dockerfile: Dockerfile
+    container_name: bffd-agent-runtime
+    restart: always
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_2026}@postgres:5432/${POSTGRES_DB:-bffd}
+      MCP_SERVER_URL: http://mcp-server:3001
+    depends_on:
+      - mcp-server
+    ports:
+      - "8000:8000"
+
+  # 4. Gateway Telegram (Webhook + Identificação de Piloto)
+  gateway-bot:
+    build:
+      context: ./09-codigo/gateway-bot
+      dockerfile: Dockerfile
+    container_name: bffd-gateway-bot
+    restart: always
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_2026}@postgres:5432/${POSTGRES_DB:-bffd}
+      AGENT_RUNTIME_URL: http://agent-runtime:8000
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:-bffd-secure-pilot-session-token-secret-2026}
+    depends_on:
+      - agent-runtime
+    ports:
+      - "3000:3000"
+
+  # 5. Agendador de Rotinas e Monitor de Turbulência
+  scheduler:
+    build:
+      context: ./09-codigo/scheduler
+      dockerfile: Dockerfile
+    container_name: bffd-scheduler
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_2026}@postgres:5432/${POSTGRES_DB:-bffd}
+      GATEWAY_BOT_URL: http://gateway-bot:3000
+    depends_on:
+      - gateway-bot
+
+  # 6. Painel Web do Piloto e Console do Operador (Next.js)
+  web:
+    build:
+      context: ./09-codigo/web
+      dockerfile: Dockerfile
+    container_name: bffd-web
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_2026}@postgres:5432/${POSTGRES_DB:-bffd}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3002}
+    depends_on:
+      - postgres
+    ports:
+      - "3002:3000"
+
+volumes:
+  postgres_data:
