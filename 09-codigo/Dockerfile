@@ -3,9 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copia e instala dependências do web app
+# Copia package.json e tsconfig
 COPY web/package*.json web/tsconfig.json ./
-RUN npm ci
+RUN npm install
 
 COPY web/src ./src
 
@@ -20,7 +20,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 COPY web/package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/src ./src
 

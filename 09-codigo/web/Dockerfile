@@ -2,19 +2,20 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json tsconfig.json ./
-RUN npm ci
+RUN npm install
 COPY src ./src
-# Build Next.js
+
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build || true
+RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 COPY package*.json ./
-RUN npm ci --only=production
-COPY --from=builder /app ./
+RUN npm install --omit=dev
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/src ./src
 
 EXPOSE 3000
 CMD ["npm", "start"]
