@@ -29,8 +29,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# IDE & OS
+# IDE, OS & Build Info
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+*.tsbuildinfo
